@@ -1,7 +1,8 @@
-from typing import List
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 from agents import RandomAgent, EpsilonGreedyAgent, Agent
@@ -31,27 +32,50 @@ def plot_agent_action_history(agents: List[Agent]):
     :param agents: (List[Agent]) agents
     :return:
     """
-    fig, ax = plt.subplots(1, len(agents), figsize=(18, 5))
+    fig, ax = plt.subplots(1, len(agents), figsize=(len(agents)*7, 5))
     for i, agent in enumerate(agents):
-        actions, counts = np.unique(agents[i].action_history, return_counts=True)
+        counts = agents[i].action_counts
+        actions = np.arange(len(counts))
         ax[i].bar(actions, counts)
         ax[i].set_title(agent.name)
+    fig.tight_layout()
     return fig
 
+def create_stationary_environment_setup(K_actions: int, mean: float=3, std: float = 1, random_seed: Optional[int] = None):
+    """
+    Configure the true reward distributions under an abruptly changing environment
+    :param K_actions: (int) number of actions
+    :param mean: (float) mean of Normal distribution used to sample mean of actions' reward distributions
+    :param std: (float) std of Normal distribution used to sample mean of actions' reward distributions
+    :param b: (int) number of breakpoints
+    :return:
+    """
+    rng = np.random.RandomState(random_seed)
+    mu_K = rng.normal(loc=mean, scale=std, size=K_actions)
+    return mu_K
+
+def create_abruptly_chaning_setup(K_actions: int, b: int):
+    """
+    Configure the true reward distributions under an abruptly changing environment
+    :param K_actions: (int) number of actions
+    :param b: (int) number of breakpoints
+    :return:
+    """
+    raise NotImplementedError('Not implemented yet.')
+    return
 
 def main():
     """
     Run the experiment
     :return:
     """
-    mu_K = [1, 1.25, 1.5, 1.75, 2]
-    std_K = 0.1
-    K_ACTIONS = len(mu_K)
     T = 5000
+    K_ACTIONS = 4
     RANDOM_SEED = 42
 
     # init environment
-    env = StationaryEnvironment(mu_K, std_K=std_K, random_seed=RANDOM_SEED)
+    mu_K = create_stationary_environment_setup(K_ACTIONS, random_seed=RANDOM_SEED)
+    env = StationaryEnvironment(mu_K, std_K=1, random_seed=RANDOM_SEED)
 
     # simulate the environment
     simulated_rewards = env.simulate_environment(T)

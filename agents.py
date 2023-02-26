@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Union, Optional, List
+from typing import Union, Optional
 
 import numpy as np
 
@@ -9,7 +9,7 @@ class Agent(ABC):
     Abstract class for an agent
     """
 
-    def __init__(self, K_actions, random_seed: Optional[int] = None):
+    def __init__(self, K_actions: int, random_seed: Optional[int] = None):
         """
         Constructor for abstract Agent class
         :param K_actions: (int) number of actions
@@ -17,17 +17,19 @@ class Agent(ABC):
         """
         self.name = 'Abstract_Agent'
         self.K_actions = K_actions
-        self.values = [np.nan] * self.K_actions
         self.rng = np.random.RandomState(random_seed)
         self.reset()
 
     def reset(self) -> None:
         """
-        Reset the agent
+        Reset the agent's knowledge
         :return: (None)
         """
-        init_size = 5000
+        # tracker for count and values
+        self.action_counts = np.zeros(self.K_actions)
+        self.reward_estimates = np.full(self.K_actions, np.nan)
         # memory to save sampled and optimal action and reward history
+        init_size = 10000
         self.action_history = np.full(init_size, np.nan)
         self.reward_history = np.full(init_size, np.nan)
         self.opt_action_history = np.full(init_size, np.nan)
@@ -35,16 +37,23 @@ class Agent(ABC):
         self.regret_history = np.full(init_size, np.nan)
         pass
 
-    def random_tie_breaking_argmax(self, arr: List[float]) -> int:
+    def random_tie_breaking_argmax(self, arr: np.ndarray) -> int:
         """
         Find index of maximum value in array, with random tie breaking
-        :param arr: (List[float]) array to find maximum values index
-        :return: (int) argmax
+        - If all values are nan then randomly select from them
+        - If some values are nan then randomly select from the maximum value and the nan values
+        - If all are not nan then select the maximum value, with random tie-breaking
+        :param arr: (np.ndarray) array
+        :return: (int) argmax of array
         """
         if np.all(np.isnan(arr)):
             argmax = self.rng.randint(len(arr))
+        elif np.any(np.isnan(arr)):
+            nan_idx = np.argwhere(np.isnan(arr)).flatten()
+            max_idx = np.argwhere(arr == np.nanmax(arr)).flatten()
+            argmax = np.random.choice(np.append(nan_idx, max_idx))
         else:
-            argmax = np.random.choice(np.flatnonzero(arr == arr.max()))
+            argmax = np.random.choice(np.flatnonzero(arr == np.max(arr)))
         return argmax
 
     def calculate_regret(self, reward: float, opt_reward: float) -> float:
@@ -67,6 +76,16 @@ class Agent(ABC):
         :param opt_reward: (float) optimal (maximum expected) reward at time step t
         :return: (None)
         """
+        # update count
+        self.action_counts[action] += 1
+        # update reward estimate
+        prev_reward_estimate = self.reward_estimates[action]
+        if np.isnan(prev_reward_estimate):
+            self.reward_estimates[action] = reward
+        else:
+            error = reward - prev_reward_estimate
+            self.reward_estimates[action] += error / self.action_counts[action]
+        # update history
         self.action_history[t] = action
         self.reward_history[t] = reward
         self.opt_action_history[t] = opt_action
@@ -84,8 +103,6 @@ class Agent(ABC):
         pass
 
 
-
-
 class RandomAgent(Agent):
     """
     Class for a random agent
@@ -100,13 +117,15 @@ class RandomAgent(Agent):
         super().__init__(K_actions, random_seed)
         self.name = 'Random_Agent'
 
-    def select_action(self, t: int):
+    def select_action(self, t: int) -> None:
         """
         Select an action with a random policy
-        :return:
+        :param t: (int) time step
+        :return: (int) action
         """
         action = self.rng.choice(self.K_actions)
         return action
+
 
 class EpsilonGreedyAgent(Agent):
     """
@@ -121,22 +140,23 @@ class EpsilonGreedyAgent(Agent):
         :param random_seed: (int) random seed
         """
         super().__init__(K_actions, random_seed)
-        if not (0<=epsilon<1):
+        if not (0 <= epsilon < 1):
             raise ValueError('Epsilon must be between [0,1)}.')
         self.epsilon = epsilon
-        self.name = f'{self.epsilon}epsilon_Greedy_Agent' if epsilon>0 else 'Greedy_Agent'
+        self.name = f'{self.epsilon}epsilon_Greedy_Agent' if epsilon > 0 else 'Greedy_Agent'
         return
 
-    def select_action(self, t) -> int:
+    def select_action(self, t: int) -> int:
         """
         Select an action with an epsilon greedy policy
+        :param t: (int) time step
         :return: (int) action
         """
         act_greedily = (self.rng.uniform() > self.epsilon)
         if act_greedily:
-            next_action = self.random_tie_breaking_argmax(self.values)
+            next_action = self.random_tie_breaking_argmax(self.reward_estimates)
         else:
-            next_action = self.rng.randint(len(self.values))
+            next_action = self.rng.randint(len(self.reward_estimates))
         return next_action
 
 

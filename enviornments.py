@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from abc import ABC
+from typing import Optional, Union, Tuple
 
 import numpy as np
 
@@ -17,37 +17,24 @@ class Environment(ABC):
         self.rng = np.random.RandomState(random_seed)
         return
 
-    @abstractmethod
-    def reset(self):
-        """
-        Abstract class method to reset the environment
-        :return:
-        """
-        pass
-
 
 class StationaryEnvironment(Environment):
     """
     Class for a stationary environment
     """
 
-    def __init__(self, mu_K: List[Union[float, int]], std_K: Union[float, int, List[Union[float, int]]] = 1,
-                 random_seed: Optional[int] = None):
+    def __init__(self, mu_K: np.ndarray, std_K: Union[np.ndarray, float, int] = 1, random_seed: Optional[int] = None):
         """
         Constructor for a stationary environment
-        :param mu_K: (List[Union[float, int]]) action mu values
-        :param std_K: (Union[float, int, List[Union[float, int]]]) action std values
+        :param mu_K: (np.ndarray) means of actions' Normal reward distributions
+        :param std_K: (Union[np.ndarray, float, int]) stds of actions Normal reward distributions
         :param random_seed: (int) random seed
         """
         super().__init__(random_seed)
         self.name = 'Stationary'
         self.K_actions = len(mu_K)
         self.mu_K = mu_K
-        if isinstance(std_K, (float, int)):
-            self.std_K = [std_K] * self.K_actions
-        if len(mu_K) != len(self.std_K):
-            raise ValueError('Length of mu_K and std_K are not equal.')
-        return
+        self.std_K = std_K
 
     def simulate_environment(self, T: int, N_sims=10):
         """
@@ -59,7 +46,7 @@ class StationaryEnvironment(Environment):
         rewards = np.full((self.K_actions, N_sims, T), np.nan)
         for k_action in range(self.K_actions):
             for i_sim in range(N_sims):
-                rewards[k_action, i_sim] = self.rng.normal(loc=self.mu_K[k_action], scale=self.std_K[k_action], size=T)
+                rewards[k_action, i_sim] = self.rng.normal(loc=self.mu_K[k_action], scale=self.std_K, size=T)
         return rewards
 
     def sample_action(self, k_action: int):
@@ -68,14 +55,18 @@ class StationaryEnvironment(Environment):
         :param k_action: (int) action selected
         :return:
         """
-        reward_sample = self.rng.normal(loc=self.mu_K[k_action], scale=self.std_K[k_action])
+        reward_sample = self.rng.normal(loc=self.mu_K[k_action], scale=self.std_K)
         return reward_sample
 
-    def ask_oracle(self):
+    def ask_oracle(self) -> Tuple[int, float]:
+        """
+        Ask orcale for optimal action and reward, used to calculate regret
+        :return:
+        """
         # optimal action is the one with the maximum expected reward
-        opt_action = np.argmax(self.mu_K)
+        opt_action = int(np.argmax(self.mu_K))
         opt_reward = self.mu_K[opt_action]  # equivalent to np.max(self.mu_K)
-        return opt_action, opt_reward
+        return (opt_action, opt_reward)
 
 
 class AbruptlyChangingEnvironment(Environment):
