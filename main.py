@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -11,7 +12,7 @@ from enviornments import StationaryEnvironment
 
 def plot_simulated_environment(simulated_rewards: np.ndarray, step_size: int = 25):
     """
-    Plot the rewards from the simulated environment
+    Plot the sampled rewards from a simulated environment
     :param simulated_rewards: (np.ndarray) simulated reward with shape (K_actions, N_sims, T)
     :param step_size: (int) increments of the time steps to plot
     :return:
@@ -28,11 +29,11 @@ def plot_simulated_environment(simulated_rewards: np.ndarray, step_size: int = 2
 
 def plot_agent_action_history(agents: List[Agent]):
     """
-    Plot the rewards from the simulated environment
+    Plot the action history for each agent
     :param agents: (List[Agent]) agents
     :return:
     """
-    fig, ax = plt.subplots(1, len(agents), figsize=(len(agents)*7, 5))
+    fig, ax = plt.subplots(1, len(agents), figsize=(len(agents) * 7, 5))
     for i, agent in enumerate(agents):
         counts = agents[i].action_counts
         actions = np.arange(len(counts))
@@ -41,40 +42,94 @@ def plot_agent_action_history(agents: List[Agent]):
     fig.tight_layout()
     return fig
 
-def create_stationary_environment_setup(K_actions: int, mean: float=3, std: float = 1, random_seed: Optional[int] = None):
+
+def plot_environment_setup(mu_df: pd.DataFrame, ax_lines: List[Optional[Union[float, int]]] = []):
     """
-    Configure the true reward distributions under an abruptly changing environment
+    Plot the true mean reward for each action
+    :param mu_df: (pd.DataFrame) true action rewards
+    :param ax_lines: (List[Union[Optional[float, int]]]) vertical lines to plot
+    :return:
+    """
+    fig, ax = plt.subplots(figsize=(len(str(len(mu_df))) * 5, 8))
+    melted_df = mu_df.reset_index().melt('t', var_name=['action'], value_name='mu')
+    sns.scatterplot(data=melted_df, x='t', y='mu', hue='action', ax=ax)
+    if len(ax_lines) > 0:
+        for ax_line in ax_lines:
+            ax.axvline(ax_line, linestyle='--', color='k')
+    ax.set_xlabel('Time step, t')
+    ax.set_title('True Mean Reward')
+    ax.set_title('True Mean Reward for each Action Throughout the Experiment')
+    return fig
+
+
+def create_stationary_environment_setup(T: int, K_actions: int, mean: float = 3, std: float = 1,
+                                        random_seed: Optional[int] = None):
+    """
+    Configure the true reward distribution for each action under an abruptly changing environment
+    :param T: (int) total number of time steps
     :param K_actions: (int) number of actions
     :param mean: (float) mean of Normal distribution used to sample mean of actions' reward distributions
     :param std: (float) std of Normal distribution used to sample mean of actions' reward distributions
-    :param b: (int) number of breakpoints
+    :param random_seed: (int) random seed
     :return:
     """
     rng = np.random.RandomState(random_seed)
+    mu_df = pd.DataFrame(index=np.arange(T), columns=[f'Action_{k_action}' for k_action in range(K_actions)])
+    mu_df.index.name = 't'
     mu_K = rng.normal(loc=mean, scale=std, size=K_actions)
+    mu_df.loc[:, :] = mu_K
+    # plot environment setup
+    plot_environment_setup(mu_df)
     return mu_K
 
-def create_abruptly_chaning_setup(K_actions: int, b: int):
+
+def create_abruptly_changing_setup(T: int, K_actions: int, B_N: int, mean: float = 3, std: float = 1,
+                                   random_seed: Optional[int] = None):
     """
-    Configure the true reward distributions under an abruptly changing environment
+    Configure the true reward distribution for each action under an abruptly changing environment
+    :param T: (int) total number of time steps
     :param K_actions: (int) number of actions
-    :param b: (int) number of breakpoints
+    :param B_N: (int) number of breakpoints
+    :param mean: (float) mean of Normal distribution used to sample mean of actions' reward distributions
+    :param std: (float) std of Normal distribution used to sample mean of actions' reward distributions
+    :param random_seed: (int) random seed
     :return:
     """
-    raise NotImplementedError('Not implemented yet.')
-    return
+    if B_N > T:
+        raise ValueError('Number of breakpoints is larger than total number of time steps.')
+    mu_df = pd.DataFrame(index=np.arange(T), columns=[f'Action_{k_action}' for k_action in range(K_actions)])
+    mu_df.index.name = 't'
+    rng = np.random.RandomState(random_seed)
+    B = np.sort(rng.choice(T, size=B_N, replace=False))
+    prev_idx = 0
+    for idx in list(B) + [T]:
+        phase_mu_K = rng.normal(loc=mean, scale=std, size=K_actions)
+        repeat_phase_mu_K = np.repeat(phase_mu_K.reshape(1, -1), idx - prev_idx, axis=0)
+        mu_df.loc[prev_idx:idx - 1, :] = repeat_phase_mu_K
+        prev_idx = idx
+    # plot environment setup
+    plot_environment_setup(mu_df, ax_lines=list(B - 0.5))
+    return mu_df
+
 
 def main():
     """
     Run the experiment
     :return:
     """
-    T = 5000
-    K_ACTIONS = 4
+    T = 7500
+    K_ACTIONS = 5
+    B_N = 4
     RANDOM_SEED = 42
 
     # init environment
-    mu_K = create_stationary_environment_setup(K_ACTIONS, random_seed=RANDOM_SEED)
+    #mu_df = create_stationary_environment_setup(T, K_ACTIONS, random_seed=RANDOM_SEED)
+    mu_df = create_abruptly_changing_setup(T, K_ACTIONS, B_N, random_seed=RANDOM_SEED)
+
+    # get mu for each action in array form
+    mu_K = mu_df.to_numpy().T
+
+    # init environment
     env = StationaryEnvironment(mu_K, std_K=1, random_seed=RANDOM_SEED)
 
     # simulate the environment
